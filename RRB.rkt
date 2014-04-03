@@ -32,34 +32,6 @@
 
 (struct node (height sizes data) #:transparent #:mutable)
 
-(define index-sub
-  (lambda (slot n)
-    (if (zero? slot) 0 (vector-ref (node-sizes n) (sub1 slot)))))
-
-;; Returns how many items are in the tree.
-
-(define length
-  (lambda (n)
-    (if (leaf-node? n) 
-        (vector-length (node-data n))
-        (let ((s (node-sizes n)))
-          (vector-ref s (sub1 (vector-length s)))))))
-
-;; Copies a node for updating. Note that you should not use
-;; this if only updating one of _data and _sizes for performance reasons.
-
-(define node-copy
-  (lambda (n)
-    (if (leaf-node? n) 
-      (node 0 #f (vector-copy (node-data n)))
-      (node (node-height n)
-            (vector-copy (node-sizes n)) 
-            (vector-copy (node-data n))))))
-
-(define leaf-node?
-  (lambda (n)
-    (zero? (node-height n))))
-
  ;; Gets the value at index i recursively.
 (trace-define get
   (lambda (i n)
@@ -97,20 +69,6 @@
                                 item
                                 (vector-ref (node-data n) slot)))
               new))))))
-
-;; Vector Helpers
-(define vector-last
-  (lambda (vec)
-    (let ((size (vector-length vec)))
-      (vector-ref vec (sub1 size)))))
-
-(define vector-set!-first
-  (lambda (vec item) (vector-set! vec 0 item)))
-
-(define vector-set!-last
-  (lambda (vec item)
-    (let ((size (vector-length vec)))
-      (vector-set! vec (sub1 size) item))))
 
 ;; Pushes an item via pushloop to the bottom right of a tree.
 (define push
@@ -259,15 +217,6 @@
       (let ((l (if (or (zero? index) (= index (vector-length asizes))) 0 (get2 asizes asizes (sub1 index)))))
         (set2 asizes bsizes index (+ l (length slot)))))))
 
-;; Returns an array of two balanced nodes.
-
-(define node-data-length (lambda (n) (vector-length (node-data n))))
-(define node-sizes-length (lambda (n) (vector-length (node-sizes n))))
-
-(define vector-slice
-  (lambda (vec from to)
-    (vector-take (vector-drop vec from) (sub1 to))))
-
 (trace-define rebalance
   (lambda (a b toRemove)
     (let* ((newA (create-len-node (node-height a) 
@@ -288,7 +237,6 @@
            (write read)
            (slot (create-len-node (sub1 (node-height a)) 0))
            (from 0))
-      (printf "~ngot past the let*~n")
       (let-values 
         (((write read slot )
            (let loop ((write read) (read read) (slot slot) (from from) (to 0))
@@ -325,63 +273,6 @@
                 (values newA newB)
                 (begin (saveSlot newA newB write (get2 adata bdata read)) (loop (add1 read) (add1 write))))))))))
 
-;;  ;; Pulling items from left to right, caching in a slot before writing
-;;  ;; it into the new nodes.
-;;  var write = read;
-;;  var slot = new createNode(a._height - 1, 0);
-;;  var from = 0;
-;;  
-;;  ;; If the current slot is still containing data, then there will be at
-;;  ;; least one more write, so we do not break this loop yet.
-;;  while (read - write - (slot._data.length > 0 ? 1 : 0) < toRemove) {
-;;    ;; Find out the max possible items for copying.
-;;    var source = get2(a._data, b._data, read);
-;;    var to = Math.min(M - slot._data.length, source._data.length)
-;;  
-;;    ;; Copy and adjust size table.
-;;    slot._data = slot._data.concat(source._data.slice(from, to));
-;;    if (slot._height > 0) {
-;;      var len = slot._sizes.length;
-;;      for (var i = len ... i < len + to - from ... i++) {
-;;        slot._sizes[i] = length(slot._data[i]);
-;;        slot._sizes[i] += (i > 0 ? slot._sizes[i - 1] : 0);
-;;      }
-;;    }
-;;  
-;;    from += to;
-;;  
-;;    ;; Only proceed to next slots[i] if the current one was
-;;    ;; fully copied.
-;;    if (source._data.length <= to) {
-;;      read++;
-;;      from = 0;
-;;    }
-;;  
-;;    ;; Only create a new slot if the current one is filled up.
-;;    if (slot._data.length == M) {
-;;      saveSlot(newA, newB, write, slot);
-;;      slot = createNode(a._height - 1, 0);
-;;      write++;
-;;    }
-;;  }
-;;  
-;;  
-;;  
-;;  // Cleanup after the loop. Copy the last slot into the new nodes.
-;;  if (slot._data.length > 0) {
-;;    saveSlot(newA, newB, write, slot);
-;;    write++;
-;;  }
-;;  
-;;  // Shift the untouched slots to the left
-;;  while (read < a._data.length + b._data.length) {
-;;    saveSlot(newA, newB, write, get2(a._data, b._data, read));
-;;    read++;
-;;    write++;
-;;  }
-;;  
-;;  return [newA, newB];
-
 ;; Helper functions
 
 (define botRight
@@ -391,6 +282,58 @@
 
 (define botLeft
   (lambda (n) (vector-ref (node-data n) 0)))
+
+(define index-sub
+  (lambda (slot n)
+    (if (zero? slot) 0 (vector-ref (node-sizes n) (sub1 slot)))))
+
+;; Returns how many items are in the tree.
+
+(define length
+  (lambda (n)
+    (if (leaf-node? n) 
+        (vector-length (node-data n))
+        (let ((s (node-sizes n)))
+          (vector-ref s (sub1 (vector-length s)))))))
+
+;; Copies a node for updating. Note that you should not use
+;; this if only updating one of _data and _sizes for performance reasons.
+
+(define node-copy
+  (lambda (n)
+    (if (leaf-node? n) 
+      (node 0 #f (vector-copy (node-data n)))
+      (node (node-height n)
+            (vector-copy (node-sizes n)) 
+            (vector-copy (node-data n))))))
+
+(define leaf-node?
+  (lambda (n)
+    (zero? (node-height n))))
+
+;; Returns an array of two balanced nodes.
+(define node-data-length (lambda (n) (vector-length (node-data n))))
+(define node-sizes-length (lambda (n) (vector-length (node-sizes n))))
+
+(define vector-slice
+  (lambda (vec from to)
+    (vector-take (vector-drop vec from) (sub1 to))))
+
+;; Vector Helpers
+(define vector-last
+  (lambda (vec)
+    (let ((size (vector-length vec)))
+      (vector-ref vec (sub1 size)))))
+
+(define vector-set!-first
+  (lambda (vec item) (vector-set! vec 0 item)))
+
+(define vector-set!-last
+  (lambda (vec item)
+    (let ((size (vector-length vec)))
+      (vector-set! vec (sub1 size) item))))
+
+
 
 ;; Recursively creates a tree with a given height containing
 ;; only the given item.

@@ -15,6 +15,7 @@
 ;; leaves.
 
 (require racket/vector)
+(require racket/trace)
 (require (only-in racket/unsafe/ops unsafe-fxrshift))
 
 ;; M is the maximal node size. 32 seems fast. E is the allowed increase
@@ -23,8 +24,10 @@
 ;; The user is responsible for two things:
 ;;   1. M MUST BE A POWER OF 2
 ;;   2. log2m be log_2 (m), which is a FIXNUM
-(define m 4)
-(define log2m 2)
+;; (define m 32)
+;; (define log2m 5)
+(define m 8)
+(define log2m 3)
 (define e 2)
 
 (struct node (height sizes data) #:transparent #:mutable)
@@ -148,7 +151,7 @@
         [(= height-a 0) (concat (parentise node-a 1) (parentise node-b 1)) ]
         [else 
           (let-values (((c0 c1) (concatloop node-a node-b)))
-            (if c1 (siblise c0 c1) c0))]))))
+            (if (> (node-data-length c1) 0) (siblise c0 c1) c0))]))))
 
 ;; Returns an array of two nodes. The second node _may_ be empty. This case
 ;; needs to be handled by the function, that called concat_. May be only
@@ -196,6 +199,8 @@
                                                 (begin (vector-set! bsize i len) (loop (add1 i) len)))))
                       (balance-recur a b)))]))))])))
 
+(trace concatloop)
+
 ;; Returns the extra search steps for E. Refer to the paper.
 (define calc-to-remove 
   (lambda (a b)
@@ -225,12 +230,16 @@
         [(< index len-a) (vector-set! vec-a index value)]
         [else (vector-set! vec-b (- index len-a) value)]))))
 
+(trace set2)
+
 ;; Creates a node or leaf with a given length at their arrays for perfomance.
 ;; Is only used by rebalance.
 (define create-len-node
   (lambda (height length)
     (let ((len (if (< length 0) 0 length)))
       (node height (if (zero? height) #f (make-vector length)) (make-vector length)))))
+
+(trace create-len-node)
 
 (define saveSlot
   (lambda (a b index slot)
@@ -240,8 +249,11 @@
       (let ((l (if (or (zero? index) (= index (vector-length asizes))) 0 (get2 asizes asizes (sub1 index)))))
         (set2 asizes bsizes index (+ l (length slot)))))))
 
+(trace saveSlot)
+
 (define rebalance
   (lambda (a b toRemove)
+    (printf "~s~n~s~n~s~n" a b toRemove)
     (let* ((newA (create-len-node (node-height a) 
                     (min m (- (+ (node-data-length a) (node-data-length b)) toRemove))))
            (newB (create-len-node (node-height a) 
@@ -250,9 +262,11 @@
            (adata (node-data a))       (bdata (node-data b))
            (nasizes (node-sizes newA)) (nbsizes (node-sizes newB)) 
            (asizes (node-sizes a))     (bsizes (node-sizes b))
-           (read ;; Skip the slots with size M. More precise: copy the slot references to the new node    
+           (read ;; Skip the slots with size M. More precise: copy the slot
+                 ;; references to the new node    
               (let loop ((read 0))
-                (if (not (zero? (quotient (node-data-length (get2 (node-data a) (node-data b) read)) m))) read
+                (if (not (zero? (modulo (node-data-length (get2 (node-data a) (node-data b) read)) m))) 
+                    read
                     (begin
                       (set2 nadata nbdata read (get2 adata bdata read))
                       (set2 nasizes nbsizes read (get2 asizes bsizes read))
@@ -261,40 +275,54 @@
            (slot (create-len-node (sub1 (node-height a)) 0))
            (from 0))
       (let-values 
-        (((write read slot )
+        (((write read slot)
            (let loop ((write read) (read read) (slot slot) (from from) (to 0))
-           (if (< (- (- read write) (if (> (node-data-length slot) 0) 1 0)) toRemove)
-               (values write read slot)
-                (let* ((src (get2 adata bdata read))
-                       (srcdata (node-data src))     (srcsize (node-sizes src))
-                       (to (min (- m (node-data-length slot)) (node-data-length src))))
-                  (set-node-data! slot (vector-append (vector-slice srcdata from to)))
-                  (when (> 0 (node-height slot))
-                    (let ((len (node-sizes-length slot))
-                          (slot-data (node-data slot))
-                          (slot-sizes (node-sizes slot)))
-                      (let loop ((i len))
-                        (when (< i (+ len (- to from)))
-                           (begin
-                             (vector-set! slot-sizes i 
-                               (+ (vector-length (vector-ref slot-data i)) (if (zero? i) 0 (vector-ref slot-sizes (sub1 i)))))
-                             (loop (add1 i)))))))
-                  (let ((from (+ from to)))
-                    (cond
-                     [(<= (vector-length srcdata) to) (loop write (add1 read) slot 0 to)]
-                     [(= (vector-length srcdata) m)
-                      (begin
-                       (saveSlot newA newB write slot)
-                       (loop (add1 write) read (create-len-node (sub1 (node-height a)) from to)))]
-                     [else (loop write read slot from to)])))))))
+             (if (< (- (- read write) (if (> (node-data-length slot) 0) 1 0)) toRemove)
+                 (let* ((src (get2 adata bdata read))
+                        (srcdata (node-data src))     (srcsize (node-sizes src))
+                        (to (min (- m (node-data-length slot)) (node-data-length src))))
+                   (set-node-data! slot 
+                                   (vector-append (node-data slot) (vector-slice srcdata from to)))
+                   (when (not (leaf-node? slot))
+                     (let* ((len (node-sizes-length slot))
+                            (dead (when (> (sub1 (- to from)) 0) 
+                                    (set-node-sizes! slot (vector-append (node-sizes slot)
+                                                          (make-vector (sub1 (- to from)) 0)))))
+                            (slot-data (node-data slot))
+                            (slot-sizes (node-sizes slot)))
+                         (printf " Len : ~s~n" len)
+                       (let loop ((i len))
+                         (printf " I : ~s~n" i)
+                         (when (< i (+ len (sub1 (- to from))))
+                            (begin
+                              (vector-set! slot-sizes i 
+                                (+ (length (vector-ref slot-data i)) 
+                                   (if (zero? i) 0 (vector-ref slot-sizes (sub1 i)))))
+                              (loop (add1 i)))))))
+                   (printf "UPDATE OVER~n")
+                   (let ((from (+ from to)))
+                     (cond
+                      [(<= (vector-length srcdata) to) (loop write (add1 read) slot 0 to)]
+                      [(= (vector-length srcdata) m)
+                       (begin
+                        (saveSlot newA newB write slot)
+                        (loop (add1 write) read (create-len-node (sub1 (node-height a)) from to)))]
+                      [else (loop write read slot from to)])))
+                 (values write read slot)))))
+        (printf "LOOP OVER~n")
         (let ((write (if (> (node-data-length slot) 0)
                          (begin (saveSlot newA newB write slot) (add1 write))
                          write)))
-        
+          (printf "LAST LOOP~n")
           (let loop ((read read) (write write))
-            (if (>= read (+ (node-data-length a) (node-data-length b)))
-                (values newA newB)
-                (begin (saveSlot newA newB write (get2 adata bdata read)) (loop (add1 read) (add1 write))))))))))
+            (printf "TICK ~s ~s~n" read write)
+            (if (< read (+ (node-data-length a) (node-data-length b)))
+                (begin 
+                  (saveSlot newA newB write (get2 adata bdata read)) 
+                  (loop (add1 read) (add1 write)))
+                (values newA newB))))))))
+
+(trace rebalance)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Helper functions
@@ -327,12 +355,14 @@
             (vector-copy (node-data n))))))
 
 ;; Returns an array of two balanced nodes.
-(define node-data-length (lambda (n) (vector-length (node-data n))))
+(define node-data-length  (lambda (n) (vector-length (node-data n))))
 (define node-sizes-length (lambda (n) (vector-length (node-sizes n))))
 
 (define vector-slice
   (lambda (vec from to)
     (vector-take (vector-drop vec from) (sub1 to))))
+
+(trace vector-slice)
 
 ;; Vector Helpers
 (define vector-last
@@ -372,3 +402,5 @@
     (node (add1 (node-height a)) (vector (length a) (+ (length a) (length b))) (vector a b))))
 
      
+;; http://jsperf.com/native-array-vs-rrb-tree-pushing
+

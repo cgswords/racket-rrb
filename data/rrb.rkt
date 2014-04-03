@@ -23,10 +23,8 @@
 ;; The user is responsible for two things:
 ;;   1. M MUST BE A POWER OF 2
 ;;   2. log2m be log_2 (m), which is a FIXNUM
-;; (define m 32)
-;; (define log2m 5)
-(define m 8)
-(define log2m 3)
+(define m 32)
+(define log2m 5)
 (define e 2)
 
 (struct node (height sizes data) #:transparent #:mutable)

@@ -1,6 +1,6 @@
 #lang racket
 
-(provide (all-defined-out))
+(provide get put push concat printtree length node)
 
 ;; An RRB-Tree has two distinct data types. A leaf which contains data as
 ;; an array in _data, and a height in _height, that is always 0. A node has in
@@ -10,9 +10,7 @@
 (require racket/trace)
 (require racket/vector)
 (require (for-syntax syntax/define))
-(require (only-in racket/fixnum fxrshift))
 (require (only-in racket/unsafe/ops unsafe-fxrshift))
-
 
 (define-syntax (trace-define stx)
   (syntax-case stx ()

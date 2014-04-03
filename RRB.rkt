@@ -7,73 +7,95 @@
 ;; addition its size table in _sizes, while _data contains an array of nodes or
 ;; leaves.
 
- (require racket/vector)
+(require racket/trace)
+(require racket/vector)
+(require (for-syntax syntax/define))
+(require (only-in racket/fixnum fxrshift))
+(require (only-in racket/unsafe/ops unsafe-fxrshift))
+
+
+(define-syntax (trace-define stx)
+  (syntax-case stx ()
+    [(_ e ...)
+     (let-values ([(name def) (normalize-definition stx #'lambda)])
+       #`(begin (define #,name #,def) (trace #,name)))]))
 
 ;; M is the maximal node size. 32 seems fast. E is the allowed increase
 ;; of search steps when concatting to find an index. Lower values will 
 ;; decrease balancing, but will increase search steps.
-(define m 32)
+;; The user is responsible for two things:
+;;   1. M MUST BE A POWER OF 2
+;;   2. log2m be log_2 (m), which is a FIXNUM
+(define m 4)
+(define log2m 2)
 (define e 2)
 
 (struct node (height sizes data) #:transparent #:mutable)
 
 (define index-sub
-  (lambda (slot node)
-    (if (zero? slot) 0 (vector-ref (node-sizes node) (sub1 slot)))))
+  (lambda (slot n)
+    (if (zero? slot) 0 (vector-ref (node-sizes n) (sub1 slot)))))
 
 ;; Returns how many items are in the tree.
 
 (define length
-  (lambda (node)
-    (if (leaf-node? node) 
-        (vector-length (node-data node))
-        (let ((s (node-sizes node)))
+  (lambda (n)
+    (if (leaf-node? n) 
+        (vector-length (node-data n))
+        (let ((s (node-sizes n)))
           (vector-ref s (sub1 (vector-length s)))))))
 
 ;; Copies a node for updating. Note that you should not use
 ;; this if only updating one of _data and _sizes for performance reasons.
 
 (define node-copy
-  (lambda (node)
-    (node (node-height node)
-          (vector-copy (node-sizes node)) 
-          (vector-copy (node-data node)))))
+  (lambda (n)
+    (if (leaf-node? n) 
+      (node 0 #f (vector-copy (node-data n)))
+      (node (node-height n)
+            (vector-copy (node-sizes n)) 
+            (vector-copy (node-data n))))))
 
 (define leaf-node?
-  (lambda (node)
-    (zero? (node-height node))))
+  (lambda (n)
+    (zero? (node-height n))))
 
  ;; Gets the value at index i recursively.
-(define get
-  (lambda (i node)
-    (if (leaf-node? node) 
-        (vector-ref i node)
-        (let ((slot (get-slot i node)))
-          (get (- i (- i (index-sub slot node))) 
-               (vector-ref (node-data node) slot))))))
+(trace-define get
+  (lambda (i n)
+    (if (leaf-node? n) 
+        (vector-ref (node-data n) i)
+        (let ((slot (get-slot i n)))
+          (get (- i (index-sub slot n)) 
+               (vector-ref (node-data n) slot))))))
 
 ;; Calculates in which slot the item probably is, then
-;; find the exact slot in the size table ._sizes. Returns the index.
-(define get-slot
-  (lambda (i node)
-    (let ((ilst (node-sizes node)))
-      (let loop ([slot (quotient i m)])
+;; find the exact slot in the size table. Returns the index.
+(define fast-shifts
+  (lambda (n i) (if (zero? n) 
+                    i 
+                    (fast-shifts (sub1 n) (unsafe-fxrshift i log2m)))))
+
+(trace-define get-slot
+  (lambda (i n)
+    (let ((ilst (node-sizes n)))
+      (let loop ([slot (fast-shifts (node-height n) i)])
         (if (< i (vector-ref ilst slot)) slot (loop (add1 slot)))))))
 
 ;; Sets the value at the index i. Only the nodes leading to i will get
 ;; copied and updated.
-(define set
-  (lambda (i item node)
-    (let ((new (node-copy node)))
-      (if (leaf-node? node)
-          (vector-set! (node-data node) i item)
-          (let ((slot (get-slot i node)))
+(trace-define set
+  (lambda (i item n)
+    (let ((new (node-copy n)))
+      (if (leaf-node? n)
+          (begin (vector-set! (node-data new) i item) new)
+          (let ((slot (get-slot i n)))
             (begin
               (vector-set! (node-data new) 
                            slot 
-                           (set (- i (index-sub slot node))
+                           (set (- i (index-sub slot n))
                                 item
-                                (vector-ref (node-data node) slot)))
+                                (vector-ref (node-data n) slot)))
               new))))))
 
 ;; Vector Helpers
@@ -92,49 +114,49 @@
 
 ;; Pushes an item via pushloop to the bottom right of a tree.
 (define push
-  (lambda (item node)                           
+  (lambda (item n)                           
   (define node-push
-    (lambda (item node)
-      (let ((sizes (node-sizes node)) (data (node-data node)) (height (node-height node)))
-        (if (leaf-node? node)
+    (lambda (item n)
+      (let ((sizes (node-sizes n)) (data (node-data n)) (height (node-height n)))
+        (if (leaf-node? n)
           (node 
             height 
-            (vector (add1 (vector-ref sizes 0))) 
+            #f 
             (vector-append data (vector item)))
           (node 
             height 
-            (vector-append sizes (vector (+ (vector-length item) (vector-last sizes))))
+            (vector-append sizes (vector (+ (vector-length (node-data item)) (vector-last sizes))))
             (vector-append data (vector item)))))))
   ;; Recursively tries to push an item to the bottom-right most
   ;; tree possible. If there is no space left for the item,
   ;; null will be returned.
   (define pushloop
-    (lambda (item node)
+    (lambda (item n)
       (cond
-        [(and (leaf-node? node) (> (vector-length (node-data node)) m))
-         (node-push item node)]
-        [(leaf-node? node) #f]
-        [(pushloop item (botRight node)) => ;; Recursively Push!
+        [(and (leaf-node? n) (< (vector-length (node-data n)) m))
+         (node-push item n)]
+        [(leaf-node? n) #f]
+        [(pushloop item (botRight n)) => ;; Recursively Push!
          (lambda (pushed)                  ;; There was space in the bottom
-           (let ((new (node-copy node)))   ;; right tree, so the slot will be 
+           (let ((new (node-copy n)))   ;; right tree, so the slot will be 
              (vector-set!-last (node-data new) pushed) ;; updated.
              (vector-set!-last (node-sizes new) 
                           (add1 (vector-last (node-sizes new))))
              new))]
-        [(> (vector-length (node-data node)) m) 
+        [(< (vector-length (node-data n)) m) 
          (let          ;; When there was no space below, see if there is                                 
            ((new-slot  ;; space left for a new slot with the item at the bottom.
-              (create item (sub1 (node-height node)))))
-           (node-push new-slot node))]
+              (create item (sub1 (node-height n)))))
+           (node-push new-slot n))]
         [else #f])))              
     (cond
-      [(pushloop item node) => (lambda (pushed) pushed)]
-      [else (siblise node (create item (node-height node)))])))
+      [(pushloop item n) => (lambda (pushed) pushed)]
+      [else (siblise n (create item (node-height n)))])))
 
 ;; Concats two trees.
 ;; TODO: Add support for concatting trees of different sizes. Current
 ;; behavior will just rise the lower tree and then concat them.
-(define concat
+(trace-define concat
   (lambda (node-a node-b)
     (let ((height-a (node-height node-a))
           (height-b (node-height node-b)))
@@ -149,19 +171,19 @@
 ;; Returns an array of two nodes. The second node _may_ be empty. This case
 ;; needs to be handled by the function, that called concat_. May be only
 ;; called for trees with an minimal height of 1.
-(define concatloop
+(trace-define concatloop
   (lambda (a b)
-    (define node-drop
-     (lambda (node)
+    (trace-define node-drop
+     (lambda (n)
        (node
-         (node-height node)
-         (vector-drop (node-data node) 1)
-         (let ((size-disp (vector-ref (node-sizes node) 0)))
-           (vector-map (lambda (v) (- v size-disp)) (vector-drop (node-sizes node) 1))))))
-    (define balance-recur
+         (node-height n)
+         (vector-drop (node-data n) 1)
+         (let ((size-disp (vector-ref (node-sizes n) 0)))
+           (vector-map (lambda (v) (- v size-disp)) (vector-drop (node-sizes n) 1))))))
+    (trace-define balance-recur
       (lambda (a b)
         (let ((toRemove (calc-to-remove a b)))
-             (if (toRemove <= e) (values a b) (rebalance a b toRemove)))))
+             (if (<= toRemove e) (values a b) (rebalance a b toRemove)))))
     (cond
       [(= 1 (node-height a)) (balance-recur a b)] ;; Check if balancing is needed and return based on that.
       [else 
@@ -171,8 +193,9 @@
             (vector-set!-last (node-data a) c0)
             (let* ((s (node-sizes a))
                    (slen (vector-length s)))
-              (vector-set!-last s (+ (vector-length c0)
+              (vector-set!-last s (+ (length c0)
                                 (if (> slen 1) (vector-ref s (- slen 2)) 0)))
+              (printf "Moved stuff already~n")
               (cond
                 [(zero? (vector-length (node-data c1)))
                  (let ((b (node-drop b)))
@@ -182,18 +205,18 @@
                 [else 
                   (let* ((bsize (node-sizes b))
                          (bdata (node-data b))
-                         (blen (vector-length (node-sizes b)))
-                         (c1len (vector-length c1)))
+                         (blen (vector-length bsize))
+                         (c1len (length c1)))
                     (begin
                       (vector-set!-first bdata c1)
                       (vector-set!-first (node-sizes b) c1len)
                       (let loop ((i 1) (len c1len)) 
-                        (if (>= i blen) bsize (let ((len (+ len (vector-length (vector-ref bdata i)))))
+                        (if (>= i blen) bsize (let ((len (+ len (length (vector-ref bdata i)))))
                                                 (begin (vector-set! bsize i len) (loop (add1 i) len)))))
                       (balance-recur a b)))]))))])))
 
 ;; Returns the extra search steps for E. Refer to the paper.
-(define calc-to-remove 
+(trace-define calc-to-remove 
   (lambda (a b)
     (letrec ((child-sum (lambda (vec) 
                           (let loop ((i 0) (sum 0))
@@ -223,7 +246,7 @@
 
 ;; Creates a node or leaf with a given length at their arrays for perfomance.
 ;; Is only used by rebalance.
-(define create-len-node
+(trace-define create-len-node
   (lambda (height length)
     (let ((len (if (< length 0) 0 length)))
       (node height (if (zero? height) #f (make-vector length)) (make-vector length)))))
@@ -245,7 +268,7 @@
   (lambda (vec from to)
     (vector-take (vector-drop vec from) (sub1 to))))
 
-(define rebalance
+(trace-define rebalance
   (lambda (a b toRemove)
     (let* ((newA (create-len-node (node-height a) 
                     (min m (- (+ (node-data-length a) (node-data-length b)) toRemove))))
@@ -265,6 +288,7 @@
            (write read)
            (slot (create-len-node (sub1 (node-height a)) 0))
            (from 0))
+      (printf "~ngot past the let*~n")
       (let-values 
         (((write read slot )
            (let loop ((write read) (read read) (slot slot) (from from) (to 0))
@@ -361,12 +385,12 @@
 ;; Helper functions
 
 (define botRight
-  (lambda (node) 
-    (let ((data (node-data node)))
+  (lambda (n) 
+    (let ((data (node-data n)))
       (vector-ref data (sub1 (vector-length data))))))
 
 (define botLeft
-  (lambda (node) (vector-ref (node-data node) 0)))
+  (lambda (n) (vector-ref (node-data n) 0)))
 
 ;; Recursively creates a tree with a given height containing
 ;; only the given item.
@@ -389,11 +413,25 @@
     (node (add1 (node-height a)) (vector (length a) (+ (length a) (length b))) (vector a b))))
 
 
-(define tree (let loop ((i 2) (tree (create 1 0)))
-                  (if (< i 10) (loop (add1 i) (push i tree)) tree)))
-(display tree)
+(define tree1 (let loop ((i 2) (tree (create 1 0)))
+                   (if (< i 100) (loop (add1 i) (push i tree)) tree)))
+(define tree2 (let loop ((i 101) (tree (create 100 0)))
+                   (if (< i 200) (loop (add1 i) (push i tree)) tree)))
+;; (define tree2 (let loop ((i 2) (tree (create 1 0)))
+;;                   (if (< i 3) (loop (add1 i) (push i tree)) tree)))
 
-;; (define printtree
-;;   (lambda (node) 
-;;     ...))
+(define printtree
+  (lambda (n depth)
+    (cond
+      [(leaf-node? n) 
+       (begin
+         (let loop ((i 0)) (when (< i depth) (begin (printf "  ") (loop (add1 i)))))
+         (printf "Data: ~s~n" (node-data n)))] 
+      [else 
+        (let loop ((i 0)) (when (< i depth) (begin (printf "  ") (loop (add1 i)))))
+        (printf "Height: ~s " (node-height n))
+        (let loop ((i 0)) (when (< i depth) (begin (printf "  ") (loop (add1 i)))))
+        (printf "Ranges: ~s~n" (if (node-sizes n) (node-sizes n) 0))
+        (vector-map (lambda (x) (printtree x (add1 (add1 depth)))) (node-data n)) (void)])))
+      
 

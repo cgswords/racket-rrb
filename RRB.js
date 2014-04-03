@@ -16,15 +16,7 @@ var empty = {
   _1: new Array()
 };
 
-(define vector-car
-  (lambda (v)
-    (if (< 0 (length  v)) (vector-ref v 0))))
-
-
  // Gets the value at index i recursively.
-(define get
-  (lambda (i a)
-    (if ())))
 function get(i, a) {
   if ((vector-car a) == 0) {
     if (i < a._1.length) {

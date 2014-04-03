@@ -2,7 +2,7 @@
 
 (provide (all-defined-out) print-tree)
 
-(require "RRB.rkt")
+(require data/rrb)
 
 (define tree1 (let loop ((i 2) (tree (create-tree 1)))
                    (if (< i 100) (loop (add1 i) (push i tree)) tree)))

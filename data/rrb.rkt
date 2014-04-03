@@ -254,7 +254,7 @@
               [else new-slots])))))
     (define copy-elements
       (lambda (src dest from to)
-        (set-node-data! dest (vector-append (node-data dest) (vector-slice (node-data src) from to)))
+        (set-node-data! dest (vector-append (node-data dest) (vector-copy (node-data src) from to)))
         (when (not (leaf-node? dest)) (set-node-sizes! dest (build-slot-sizes (node-data dest))))))
     (let* ((newA (create-len-node (node-height a) 
                     (min m (- (+ (node-data-length a) (node-data-length b)) toRemove))))
@@ -328,10 +328,6 @@
 ;; Returns an array of two balanced nodes.
 (define node-data-length  (lambda (n) (vector-length (node-data n))))
 (define node-sizes-length (lambda (n) (vector-length (node-sizes n))))
-
-(define vector-slice
-  (lambda (vec from to)
-    (vector-take (vector-drop vec from) (- to from))))
 
 ;; Vector Helpers
 (define vector-last

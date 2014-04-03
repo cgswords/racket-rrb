@@ -1,22 +1,21 @@
 #lang racket
 
-(provide get set push concat printtree length node)
+(provide 
+  get          ;; Int -> RRB a -> a
+  set          ;; Int -> a -> RRB a
+  push         ;; a -> RRB a -> RRB a
+  concat       ;; RRB a -> RRB a -> RRB a
+  print-tree   ;; RRB a -> Void 
+  length       ;; RRB a -> Int 
+  create-tree) ;; a -> Int -> RRB a
 
 ;; An RRB-Tree has two distinct data types. A leaf which contains data as
 ;; an array in _data, and a height in _height, that is always 0. A node has in
 ;; addition its size table in _sizes, while _data contains an array of nodes or
 ;; leaves.
 
-(require racket/trace)
 (require racket/vector)
-(require (for-syntax syntax/define))
 (require (only-in racket/unsafe/ops unsafe-fxrshift))
-
-(define-syntax (trace-define stx)
-  (syntax-case stx ()
-    [(_ e ...)
-     (let-values ([(name def) (normalize-definition stx #'lambda)])
-       #`(begin (define #,name #,def) (trace #,name)))]))
 
 ;; M is the maximal node size. 32 seems fast. E is the allowed increase
 ;; of search steps when concatting to find an index. Lower values will 
@@ -31,7 +30,7 @@
 (struct node (height sizes data) #:transparent #:mutable)
 
  ;; Gets the value at index i recursively.
-(trace-define get
+(define get
   (lambda (i n)
     (if (leaf-node? n) 
         (vector-ref (node-data n) i)
@@ -46,7 +45,7 @@
                     i 
                     (fast-shifts (sub1 n) (unsafe-fxrshift i log2m)))))
 
-(trace-define get-slot
+(define get-slot
   (lambda (i n)
     (let ((ilst (node-sizes n)))
       (let loop ([slot (fast-shifts (node-height n) i)])
@@ -54,7 +53,7 @@
 
 ;; Sets the value at the index i. Only the nodes leading to i will get
 ;; copied and updated.
-(trace-define set
+(define set
   (lambda (i item n)
     (let ((new (node-copy n)))
       (if (leaf-node? n)
@@ -109,10 +108,37 @@
       [(pushloop item n) => (lambda (pushed) pushed)]
       [else (siblise n (create item (node-height n)))])))
 
+;; Print some stuff
+(define print-tree (lambda (tree) (print-tree-recur tree 0)))
+
+(define print-tree-recur
+  (lambda (n depth)
+    (cond
+      [(leaf-node? n) 
+       (begin
+         (let loop ((i 0)) (when (< i depth) (begin (printf "  ") (loop (add1 i)))))
+         (printf "Data: ~s~n" (node-data n)))] 
+      [else 
+        (let loop ((i 0)) (when (< i depth) (begin (printf "  ") (loop (add1 i)))))
+        (printf "Height: ~s " (node-height n))
+        (let loop ((i 0)) (when (< i depth) (begin (printf "  ") (loop (add1 i)))))
+        (printf "Ranges: ~s~n" (if (node-sizes n) (node-sizes n) 0))
+        (vector-map (lambda (x) (print-tree-recur x (add1 (add1 depth)))) (node-data n)) (void)])))
+ 
+
+;; Returns how many items are in the tree.
+
+(define length
+  (lambda (n)
+    (if (leaf-node? n) 
+        (vector-length (node-data n))
+        (let ((s (node-sizes n)))
+          (vector-ref s (sub1 (vector-length s)))))))
+
 ;; Concats two trees.
 ;; TODO: Add support for concatting trees of different sizes. Current
 ;; behavior will just rise the lower tree and then concat them.
-(trace-define concat
+(define concat
   (lambda (node-a node-b)
     (let ((height-a (node-height node-a))
           (height-b (node-height node-b)))
@@ -127,16 +153,16 @@
 ;; Returns an array of two nodes. The second node _may_ be empty. This case
 ;; needs to be handled by the function, that called concat_. May be only
 ;; called for trees with an minimal height of 1.
-(trace-define concatloop
+(define concatloop
   (lambda (a b)
-    (trace-define node-drop
+    (define node-drop
      (lambda (n)
        (node
          (node-height n)
          (vector-drop (node-data n) 1)
          (let ((size-disp (vector-ref (node-sizes n) 0)))
            (vector-map (lambda (v) (- v size-disp)) (vector-drop (node-sizes n) 1))))))
-    (trace-define balance-recur
+    (define balance-recur
       (lambda (a b)
         (let ((toRemove (calc-to-remove a b)))
              (if (<= toRemove e) (values a b) (rebalance a b toRemove)))))
@@ -151,7 +177,6 @@
                    (slen (vector-length s)))
               (vector-set!-last s (+ (length c0)
                                 (if (> slen 1) (vector-ref s (- slen 2)) 0)))
-              (printf "Moved stuff already~n")
               (cond
                 [(zero? (vector-length (node-data c1)))
                  (let ((b (node-drop b)))
@@ -172,7 +197,7 @@
                       (balance-recur a b)))]))))])))
 
 ;; Returns the extra search steps for E. Refer to the paper.
-(trace-define calc-to-remove 
+(define calc-to-remove 
   (lambda (a b)
     (letrec ((child-sum (lambda (vec) 
                           (let loop ((i 0) (sum 0))
@@ -202,7 +227,7 @@
 
 ;; Creates a node or leaf with a given length at their arrays for perfomance.
 ;; Is only used by rebalance.
-(trace-define create-len-node
+(define create-len-node
   (lambda (height length)
     (let ((len (if (< length 0) 0 length)))
       (node height (if (zero? height) #f (make-vector length)) (make-vector length)))))
@@ -215,7 +240,7 @@
       (let ((l (if (or (zero? index) (= index (vector-length asizes))) 0 (get2 asizes asizes (sub1 index)))))
         (set2 asizes bsizes index (+ l (length slot)))))))
 
-(trace-define rebalance
+(define rebalance
   (lambda (a b toRemove)
     (let* ((newA (create-len-node (node-height a) 
                     (min m (- (+ (node-data-length a) (node-data-length b)) toRemove))))
@@ -271,7 +296,9 @@
                 (values newA newB)
                 (begin (saveSlot newA newB write (get2 adata bdata read)) (loop (add1 read) (add1 write))))))))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Helper functions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define botRight
   (lambda (n) 
@@ -285,18 +312,12 @@
   (lambda (slot n)
     (if (zero? slot) 0 (vector-ref (node-sizes n) (sub1 slot)))))
 
-;; Returns how many items are in the tree.
-
-(define length
+(define leaf-node?
   (lambda (n)
-    (if (leaf-node? n) 
-        (vector-length (node-data n))
-        (let ((s (node-sizes n)))
-          (vector-ref s (sub1 (vector-length s)))))))
+    (zero? (node-height n))))
 
 ;; Copies a node for updating. Note that you should not use
 ;; this if only updating one of _data and _sizes for performance reasons.
-
 (define node-copy
   (lambda (n)
     (if (leaf-node? n) 
@@ -304,10 +325,6 @@
       (node (node-height n)
             (vector-copy (node-sizes n)) 
             (vector-copy (node-data n))))))
-
-(define leaf-node?
-  (lambda (n)
-    (zero? (node-height n))))
 
 ;; Returns an array of two balanced nodes.
 (define node-data-length (lambda (n) (vector-length (node-data n))))
@@ -332,6 +349,7 @@
       (vector-set! vec (sub1 size) item))))
 
 
+(define create-tree (lambda (item) (create item 0)))
 
 ;; Recursively creates a tree with a given height containing
 ;; only the given item.
@@ -348,31 +366,9 @@
         tree
         (node height (vector (length tree)) (vector (parentise tree (sub1 height)))))))
 
-;; Emphasizes blood brotherhood beneath two trees.
+;; C'mon, get together!
 (define siblise
   (lambda (a b)
     (node (add1 (node-height a)) (vector (length a) (+ (length a) (length b))) (vector a b))))
 
-
-(define tree1 (let loop ((i 2) (tree (create 1 0)))
-                   (if (< i 100) (loop (add1 i) (push i tree)) tree)))
-(define tree2 (let loop ((i 101) (tree (create 100 0)))
-                   (if (< i 200) (loop (add1 i) (push i tree)) tree)))
-;; (define tree2 (let loop ((i 2) (tree (create 1 0)))
-;;                   (if (< i 3) (loop (add1 i) (push i tree)) tree)))
-
-(define printtree
-  (lambda (n depth)
-    (cond
-      [(leaf-node? n) 
-       (begin
-         (let loop ((i 0)) (when (< i depth) (begin (printf "  ") (loop (add1 i)))))
-         (printf "Data: ~s~n" (node-data n)))] 
-      [else 
-        (let loop ((i 0)) (when (< i depth) (begin (printf "  ") (loop (add1 i)))))
-        (printf "Height: ~s " (node-height n))
-        (let loop ((i 0)) (when (< i depth) (begin (printf "  ") (loop (add1 i)))))
-        (printf "Ranges: ~s~n" (if (node-sizes n) (node-sizes n) 0))
-        (vector-map (lambda (x) (printtree x (add1 (add1 depth)))) (node-data n)) (void)])))
-      
-
+     

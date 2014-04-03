@@ -1,6 +1,6 @@
 #lang racket
 
-(provide get put push concat printtree length node)
+(provide get set push concat printtree length node)
 
 ;; An RRB-Tree has two distinct data types. A leaf which contains data as
 ;; an array in _data, and a height in _height, that is always 0. A node has in

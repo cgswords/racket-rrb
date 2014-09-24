@@ -7,7 +7,7 @@
   concat       ;; RRB a -> RRB a -> RRB a
   print-tree   ;; RRB a -> Void 
   length       ;; RRB a -> Int 
-  create-tree) ;; a -> Int -> RRB a
+  create-tree) ;; a -> RRB a
 
 ;; An RRB-Tree has two distinct data types. A leaf which contains data as
 ;; an array in _data, and a height in _height, that is always 0. A node has in

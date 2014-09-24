@@ -2,7 +2,7 @@
 
 (provide 
   get          ;; Int -> RRB a -> a
-  set          ;; Int -> a -> RRB a
+  set          ;; Int -> a -> RRB a -> RRB a
   push         ;; a -> RRB a -> RRB a
   concat       ;; RRB a -> RRB a -> RRB a
   print-tree   ;; RRB a -> Void 

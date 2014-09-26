@@ -103,5 +103,20 @@
       (for/list ([i (in-range 0 399)]) 0)
       "Tree Set Test")))
 
+    (check-equal?
+      (let* ((tree (rrb-set-pairs (for/list ([i (in-range 0 375)]) (cons i 0)) tree1234a))
+             (tree1 (rrb-push 50 tree))
+             (tree2 (rrb-push 50 tree)))
+        (eq? tree1 tree2))
+      #f
+      "Persistance check 1")
+
+    (check-equal?
+      (let ((tree1 (rrb-concat tree1234a tree1234a))
+            (tree2 (rrb-concat tree1234a tree1234a)))
+        (eq? tree1 tree2))
+      #f
+      "Persistance check 2")
+
 (require rackunit/text-ui)
 (run-tests rrb-test)

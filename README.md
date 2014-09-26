@@ -16,13 +16,14 @@ or
 
 The structure provides the following functions:
 
-    get         :: Int -> RRB a -> a
-    set         :: Int -> a -> RRB a
-    push        :: a -> RRB a -> RRB a
-    concat      :: RRB a -> RRB a -> RRB a
-    print-tree  :: RRB a -> Void 
-    length      :: RRB a -> Int 
-    create-tree :: a -> Int -> RRB a
+
+    rrb-get         : Int -> RRB a -> a
+    rrb-set         : Int -> a -> RRB a -> RRB a
+    rrb-push        : a -> RRB a -> RRB a
+    rrb-concat      : RRB a -> RRB a -> RRB a
+    rrb-print-tree  : RRB a -> Void 
+    rrb-length      : RRB a -> Int 
+    rrb-create-tree : a -> RRB a
 
 Each works about as expected; here, `set` is persistent (and thus sort of expensive).
 

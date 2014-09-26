@@ -24,6 +24,7 @@ The structure provides the following functions:
     rrb-print-tree  : RRB a -> Void 
     rrb-length      : RRB a -> Int 
     rrb-create-tree : a -> RRB a
+    rrb?            : RRB a -> Bool
 
 Each works about as expected; here, `set` is persistent (and thus sort of expensive).
 

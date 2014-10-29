@@ -11,6 +11,5 @@ before_install:
 script:
  - ls
  - pwd
- - cd ..
  - /usr/racket/bin/raco pkg install --deps search-auto --link data/rrb
  - /usr/racket/bin/raco test -x -p rrb

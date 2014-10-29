@@ -9,7 +9,5 @@ before_install:
 - cat travis-racket/install-racket.sh | bash # pipe to bash not sh!
 
 script:
- - ls
- - pwd
  - /usr/racket/bin/raco pkg install --deps search-auto --link data/rrb
  - /usr/racket/bin/raco test -x -p rrb

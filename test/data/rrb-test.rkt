@@ -3,22 +3,22 @@
 (require data/rrb)
 (require rackunit)
 
-(define tree1 (let loop ((i 2) (tree (make-rrb 1)))
+(define tree1 (let loop ((i 2) (tree (make-rrb 1 1)))
                    (if (< i 100) (loop (add1 i) (rrb-push i tree)) tree)))
 
-(define tree2 (let loop ((i 101) (tree (make-rrb 100)))
+(define tree2 (let loop ((i 101) (tree (make-rrb 1 100)))
                    (if (< i 200) (loop (add1 i) (rrb-push i tree)) tree)))
 
-(define tree3 (let loop ((i 201) (tree (make-rrb 200)))
+(define tree3 (let loop ((i 201) (tree (make-rrb 1 200)))
                    (if (< i 300) (loop (add1 i) (rrb-push i tree)) tree)))
 
-(define tree4 (let loop ((i 301) (tree (make-rrb 300)))
+(define tree4 (let loop ((i 301) (tree (make-rrb 1 300)))
                    (if (< i 400) (loop (add1 i) (rrb-push i tree)) tree)))
 
-(define tree5 (let loop ((i 2) (tree (make-rrb 1)))
+(define tree5 (let loop ((i 2) (tree (make-rrb 1 1)))
                    (if (< i 10000) (loop (add1 i) (rrb-push i tree)) tree)))
 
-(define tree6 (let loop ((i 10001) (tree (make-rrb 20001)))
+(define tree6 (let loop ((i 10001) (tree (make-rrb 1 20001)))
                    (if (< i 20000) (loop (add1 i) (rrb-push i tree)) tree)))
 
 (define tree12 (rrb-concat tree1 tree2))

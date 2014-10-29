@@ -7,7 +7,7 @@
   rrb-concat       ;; RRB a -> RRB a -> RRB a
   rrb-print-tree   ;; RRB a -> Void 
   rrb-count        ;; RRB a -> Int 
-  make-rrb         ;; a -> RRB a
+  make-rrb         ;; Int -> RRB a \/ Int -> a -> RRB a
   rrb?)            ;; any -> Bool
 
 ;; An RRB-Tree has two distinct data types. A leaf which contains data as
@@ -347,7 +347,12 @@
       (vector-set! vec (sub1 size) item))))
 
 
-(define make-rrb (lambda (item) (create item 0)))
+(define make-rrb 
+  (case-lambda
+    [(n) (make-rrb n 0)]
+    [(n a) (let loop ((count 1) (t (create a 0))) ;; count starts at 1 because we do it once to kick off the loop 
+                (if (= count n) t
+                                (loop (add1 count) (rrb-push a t))))]))
 
 ;; Recursively creates a tree with a given height containing
 ;; only the given item.

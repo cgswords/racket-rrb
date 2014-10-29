@@ -1,14 +1,16 @@
 #lang racket
 
 (provide 
-  rrb-ref          ;; Int -> RRB a -> a
-  rrb-set          ;; Int -> a -> RRB a -> RRB a
-  rrb-push         ;; a -> RRB a -> RRB a
+  rrb-ref          ;; RRB a -> Int -> a
+  rrb-set          ;; RRB a -> Int -> a -> RRB a
+  rrb-push         ;; RRB a -> a -> RRB a
   rrb-concat       ;; RRB a -> RRB a -> RRB a
   rrb-print-tree   ;; RRB a -> Void 
   rrb-count        ;; RRB a -> Int 
-  make-rrb         ;; Int -> RRB a \/ Int -> a -> RRB a
-  rrb?)            ;; any -> Bool
+  make-rrb         ;; Int -> RRB Int \/ Int -> a -> RRB a
+  rrb?             ;; any -> Bool
+  sliceRight
+)
 
 ;; An RRB-Tree has two distinct data types. A leaf which contains data as
 ;; an array in _data, and a height in _height, that is always 0. A rrb-node has in
@@ -16,6 +18,7 @@
 ;; leaves.
 
 (require racket/vector)
+(require racket/trace)
 (require (only-in racket/unsafe/ops unsafe-fxrshift))
 
 ;; M is the maximal rrb-node size. 32 seems fast. E is the allowed increase
@@ -35,45 +38,32 @@
 
  ;; Gets the value at index i recursively.
 (define rrb-ref
-  (lambda (i n)
+  (lambda (n i)
     (if (leaf-rrb-node? n) 
         (vector-ref (rrb-node-data n) i)
-        (let ((slot (get-slot i n)))
-          (rrb-ref (- i (index-sub slot n)) 
-               (vector-ref (rrb-node-data n) slot))))))
-
-;; Calculates in which slot the item probably is, then
-;; find the exact slot in the size table. Returns the index.
-(define fast-shifts
-  (lambda (n i) (if (zero? n) 
-                    i 
-                    (fast-shifts (sub1 n) (unsafe-fxrshift i log2m)))))
-
-(define get-slot
-  (lambda (i n)
-    (let ((ilst (rrb-node-sizes n)))
-      (let loop ([slot (fast-shifts (rrb-node-height n) i)])
-        (if (< i (vector-ref ilst slot)) slot (loop (add1 slot)))))))
+        (let ((slot (get-slot n i)))
+          (rrb-ref (vector-ref (rrb-node-data n) slot)
+                   (- i (index-sub slot n)))))))
 
 ;; Sets the value at the index i. Only the rrb-nodes leading to i will get
 ;; copied and updated.
 (define rrb-set
-  (lambda (i item n)
+  (lambda (n i item)
     (let ((new (rrb-node-copy n)))
       (if (leaf-rrb-node? n)
           (begin (vector-set! (rrb-node-data new) i item) new)
-          (let ((slot (get-slot i n)))
+          (let ((slot (get-slot n i)))
             (begin
               (vector-set! (rrb-node-data new) 
                            slot 
-                           (rrb-set (- i (index-sub slot n))
-                                item
-                                (vector-ref (rrb-node-data n) slot)))
+                           (rrb-set (vector-ref (rrb-node-data n) slot)
+                                    (- i (index-sub slot n))
+                                    item))
               new))))))
 
 ;; Pushes an item via pushloop to the bottom right of a tree.
 (define rrb-push
-  (lambda (item n)                           
+  (lambda (n item)                           
   (define rrb-node-push
     (lambda (item n)
       (let ((sizes (rrb-node-sizes n)) (data (rrb-node-data n)) (height (rrb-node-height n)))
@@ -84,7 +74,8 @@
             (vector-append data (vector item)))
           (rrb-node 
             height 
-            (vector-append sizes (vector (+ (vector-length (rrb-node-data item)) (vector-last sizes))))
+            (vector-append sizes (vector (+ (vector-length (rrb-node-data item)) 
+                                            (vector-last sizes))))
             (vector-append data (vector item)))))))
   ;; Recursively tries to push an item to the bottom-right most
   ;; tree possible. If there is no space left for the item,
@@ -95,9 +86,9 @@
         [(and (leaf-rrb-node? n) (< (vector-length (rrb-node-data n)) m))
          (rrb-node-push item n)]
         [(leaf-rrb-node? n) #f]
-        [(pushloop item (botRight n)) => ;; Recursively Push!
-         (lambda (pushed)                  ;; There was space in the bottom
-           (let ((new (rrb-node-copy n)))   ;; right tree, so the slot will be 
+        [(pushloop item (botRight n)) =>                   ;; Recursively Push!
+         (lambda (pushed)                                  ;; There was space in the bottom
+           (let ((new (rrb-node-copy n)))                  ;; right tree, so the slot will be 
              (vector-set!-last (rrb-node-data new) pushed) ;; updated.
              (vector-set!-last (rrb-node-sizes new) 
                           (add1 (vector-last (rrb-node-sizes new))))
@@ -143,6 +134,70 @@
 ;; behavior will just rise the lower tree and then concat them.
 (define rrb-concat
   (lambda (rrb-node-a rrb-node-b)
+    ;; Returns an array of two rrb-nodes. The second rrb-node _may_ be empty. This case
+    ;; needs to be handled by the function, that called concat_. May be only
+    ;; called for trees with an minimal height of 1.
+    (define concatloop
+      (lambda (a b)
+        (define rrb-node-drop
+         (lambda (n)
+           (rrb-node
+             (rrb-node-height n)
+             (vector-drop (rrb-node-data n) 1)
+             (let ((size-disp (vector-ref (rrb-node-sizes n) 0)))
+               (vector-map (lambda (v) (- v size-disp)) (vector-drop (rrb-node-sizes n) 1))))))
+        (define balance-recur
+          (lambda (a b)
+            (let ((toRemove (calc-to-remove a b)))
+                 (if (<= toRemove e) (values a b) (rebalance a b toRemove)))))
+        (cond
+          [(= 1 (rrb-node-height a)) (balance-recur a b)] 
+          ;; Check if balancing is needed and return based on that.
+          [else 
+            (let-values (((c0 c1) (concatloop (botRight a) (botLeft b))))
+              (let ((a (rrb-node-copy a))
+                    (b (rrb-node-copy b)))
+                (vector-set!-last (rrb-node-data a) c0)
+                (let* ((s (rrb-node-sizes a))
+                       (slen (vector-length s)))
+                  (vector-set!-last s (+ (rrb-count c0)
+                                    (if (> slen 1) (vector-ref s (- slen 2)) 0)))
+                  (cond
+                    [(zero? (vector-length (rrb-node-data c1)))
+                     (let ((b (rrb-node-drop b)))
+                       (if (zero? (vector-length (rrb-node-data b))) 
+                           (values a b) 
+                           (balance-recur a b)))]
+                    [else 
+                      (let* ((bsize (rrb-node-sizes b))
+                             (bdata (rrb-node-data b))
+                             (blen (vector-length bsize))
+                             (c1len (rrb-count c1)))
+                        (begin
+                          (vector-set!-first bdata c1)
+                          (vector-set!-first (rrb-node-sizes b) c1len)
+                          (let loop ((i 1) (len c1len)) 
+                            (if (>= i blen) 
+                                bsize 
+                                (let ((len (+ len (rrb-count (vector-ref bdata i)))))
+                                  (begin (vector-set! bsize i len) (loop (add1 i) len)))))
+                          (balance-recur a b)))]))))])))
+    ;; Returns the extra search steps for E. Refer to the paper.
+    (define calc-to-remove 
+      (lambda (a b)
+        (letrec ((child-sum 
+                   (lambda (vec) 
+                     (let loop ((i 0) (sum 0))
+                       (if (<= (vector-length vec) i) 
+                           sum 
+                           (loop (add1 i) 
+                                 (+ sum 
+                                    (vector-length (rrb-node-data (vector-ref vec i)))))))))
+                 (adata (rrb-node-data a))
+                 (bdata (rrb-node-data b))) 
+          (let ((sublen (+ (child-sum adata) (child-sum bdata))))
+            (- (+ (vector-length adata) (vector-length bdata))
+               (add1 (quotient (sub1 sublen) m)))))))  
     (let ((height-a (rrb-node-height rrb-node-a))
           (height-b (rrb-node-height rrb-node-b)))
       (cond
@@ -153,65 +208,16 @@
           (let-values (((c0 c1) (concatloop rrb-node-a rrb-node-b)))
             (if (> (rrb-node-data-length c1) 0) (siblise c0 c1) c0))]))))
 
-;; Returns an array of two rrb-nodes. The second rrb-node _may_ be empty. This case
-;; needs to be handled by the function, that called concat_. May be only
-;; called for trees with an minimal height of 1.
-(define concatloop
-  (lambda (a b)
-    (define rrb-node-drop
-     (lambda (n)
-       (rrb-node
-         (rrb-node-height n)
-         (vector-drop (rrb-node-data n) 1)
-         (let ((size-disp (vector-ref (rrb-node-sizes n) 0)))
-           (vector-map (lambda (v) (- v size-disp)) (vector-drop (rrb-node-sizes n) 1))))))
-    (define balance-recur
-      (lambda (a b)
-        (let ((toRemove (calc-to-remove a b)))
-             (if (<= toRemove e) (values a b) (rebalance a b toRemove)))))
-    (cond
-      [(= 1 (rrb-node-height a)) (balance-recur a b)] ;; Check if balancing is needed and return based on that.
-      [else 
-        (let-values (((c0 c1) (concatloop (botRight a) (botLeft b))))
-          (let ((a (rrb-node-copy a))
-                (b (rrb-node-copy b)))
-            (vector-set!-last (rrb-node-data a) c0)
-            (let* ((s (rrb-node-sizes a))
-                   (slen (vector-length s)))
-              (vector-set!-last s (+ (rrb-count c0)
-                                (if (> slen 1) (vector-ref s (- slen 2)) 0)))
-              (cond
-                [(zero? (vector-length (rrb-node-data c1)))
-                 (let ((b (rrb-node-drop b)))
-                   (if (zero? (vector-length (rrb-node-data b))) 
-                       (values a b) 
-                       (balance-recur a b)))]
-                [else 
-                  (let* ((bsize (rrb-node-sizes b))
-                         (bdata (rrb-node-data b))
-                         (blen (vector-length bsize))
-                         (c1len (rrb-count c1)))
-                    (begin
-                      (vector-set!-first bdata c1)
-                      (vector-set!-first (rrb-node-sizes b) c1len)
-                      (let loop ((i 1) (len c1len)) 
-                        (if (>= i blen) bsize (let ((len (+ len (rrb-count (vector-ref bdata i)))))
-                                                (begin (vector-set! bsize i len) (loop (add1 i) len)))))
-                      (balance-recur a b)))]))))])))
+(define make-rrb 
+  (case-lambda
+    [(n) (make-rrb n 0)]
+    [(n a) (let loop ((count 1) (t (create a 0))) ;; count starts at 1 because we do it once to kick off the loop 
+                (if (= count n) t
+                                (loop (add1 count) (rrb-push t a))))]))
 
-;; Returns the extra search steps for E. Refer to the paper.
-(define calc-to-remove 
-  (lambda (a b)
-    (letrec ((child-sum (lambda (vec) 
-                          (let loop ((i 0) (sum 0))
-                            (if (<= (vector-length vec) i) 
-                                sum 
-                                (loop (add1 i) (+ sum (vector-length (rrb-node-data (vector-ref vec i)))))))))
-             (adata (rrb-node-data a))
-             (bdata (rrb-node-data b))) 
-      (let ((sublen (+ (child-sum adata) (child-sum bdata))))
-        (- (+ (vector-length adata) (vector-length bdata))
-           (add1 (quotient (sub1 sublen) m)))))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Helper functions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; get2 and set2 are helpers for accessing over two vectors
 (define get2
@@ -229,7 +235,6 @@
         [else (vector-set! vec-b (- index len-a) value)]))))
 
 ;; Creates a rrb-node or leaf with a given length at their arrays for perfomance.
-;; Is only used by rebalance.
 (define create-len-rrb-node
   (lambda (height length)
     (let ((len (if (< length 0) 0 length)))
@@ -298,9 +303,20 @@
                   (loop (add1 read) (add1 write)))
                 (values newA newB))))))))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Helper functions
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+;; Calculates in which slot the item probably is, then
+;; find the exact slot in the size table. Returns the index.
+(define fast-shifts
+  (lambda (n i) (if (zero? n) 
+                    i 
+                    (fast-shifts (sub1 n) (unsafe-fxrshift i log2m)))))
+
+(define get-slot
+  (lambda (n i)
+    (let ((ilst (rrb-node-sizes n)))
+      (let loop ([slot (fast-shifts (rrb-node-height n) i)])
+        (if (< i (vector-ref ilst slot)) slot (loop (add1 slot)))))))
 
 (define botRight
   (lambda (n) 
@@ -328,7 +344,6 @@
             (vector-copy (rrb-node-sizes n)) 
             (vector-copy (rrb-node-data n))))))
 
-;; Returns an array of two balanced rrb-nodes.
 (define rrb-node-data-length  (lambda (n) (vector-length (rrb-node-data n))))
 (define rrb-node-sizes-length (lambda (n) (vector-length (rrb-node-sizes n))))
 
@@ -345,14 +360,6 @@
   (lambda (vec item)
     (let ((size (vector-length vec)))
       (vector-set! vec (sub1 size) item))))
-
-
-(define make-rrb 
-  (case-lambda
-    [(n) (make-rrb n 0)]
-    [(n a) (let loop ((count 1) (t (create a 0))) ;; count starts at 1 because we do it once to kick off the loop 
-                (if (= count n) t
-                                (loop (add1 count) (rrb-push a t))))]))
 
 ;; Recursively creates a tree with a given height containing
 ;; only the given item.
@@ -374,6 +381,50 @@
   (lambda (a b)
     (rrb-node (add1 (rrb-node-height a)) (vector (rrb-count a) (+ (rrb-count a) (rrb-count b))) (vector a b))))
 
-     
-;; http://jsperf.com/native-array-vs-rrb-tree-pushing
+
+;; This takes the right slice of the tree: it removes anything from the tree beyond index i
+;; Does not maintain a balanced tree
+(define sliceRight
+  (lambda (tree index)
+    (match tree
+      [(rrb-node height sizes data) 
+       (cond
+         [(leaf-rrb-node? tree) (rrb-node 0 #f (vector-take data index))]
+         [else 
+          (let* ((sliceIndex    (get-slot tree index))
+                 (newSlicedNode (sliceRight
+                                   (vector-ref data sliceIndex)
+                                   (- index (index-sub sliceIndex index)) ))
+                 (newSizes (vector-take sizes (add1 sliceIndex)))
+                 (newData  (vector-take data (add1 sliceIndex))))
+            (vector-set! newSizes sliceIndex index)
+            (vector-set! newData  sliceIndex newSlicedNode)
+            (rrb-node height newSizes newData))])])))
+
+;; (trace get-slot)
+;; (trace sliceRight)
+
+;; This takes the left slice of the tree: it removes anything from the tree before index i
+;; Does not maintain a balanced tree
+;; (define sliceLeft
+;;   (lambda (index tree)
+;;     (match tree
+;;       [(rrb-node height sizes data) 
+;;        (cond
+;;          [(leaf-rrb-node? tree) (rrb-node 0 #f (vector-take-right data index))]
+;;          [else
+;;           (let* ((sliceIndex (get-slot index tree))
+;;                  (newSlicedNode (sliceLeft (- i (index-sub slot index)) (vector-ref data slot))))
+;;             (rrb-node height
+;;                       (recompute-sizes sizes index)
+;;                       (vector-set! (vector-take-right data index) index newSlicedNode)))])])))
+
+;; (define rrb-ref
+;;   (lambda (i n)
+;;     (if (leaf-rrb-node? n) 
+;;         (vector-ref (rrb-node-data n) i)
+;;         (let ((slot (get-slot i n)))
+;;           (rrb-ref (- i (index-sub slot n)) 
+;;                (vector-ref (rrb-node-data n) slot))))))
+
 

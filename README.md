@@ -16,14 +16,14 @@ or
 
 The structure provides the following functions:
 
-    rrb-ref        : Int -> RRB a -> a
-    rrb-set        : Int -> a -> RRB a -> RRB a
-    rrb-push       : a -> RRB a -> RRB a
-    rrb-concat     : RRB a -> RRB a -> RRB a
-    rrb-print-tree : RRB a -> Void 
-    rrb-count      : RRB a -> Int 
-    make-rrb       : Int -> RRB a \/ Int -> a -> RRB a
-    rrb?           : any -> Bool
+    rrb-ref          ;; RRB a -> Int -> a
+    rrb-set          ;; RRB a -> Int -> a -> RRB a
+    rrb-push         ;; RRB a -> a -> RRB a
+    rrb-concat       ;; RRB a -> RRB a -> RRB a
+    rrb-print-tree   ;; RRB a -> Void 
+    rrb-count        ;; RRB a -> Int 
+    make-rrb         ;; Int -> RRB Int \/ Int -> a -> RRB a
+    rrb?             ;; any -> Bool
 
 Each works about as expected; here, `set` is persistent (and thus sort of expensive).
 

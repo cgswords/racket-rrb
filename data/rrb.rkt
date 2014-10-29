@@ -4,7 +4,7 @@
          "rrb/fast.rkt")
 
 (provide/contract 
-  [rrb-get          (exact-nonnegative-integer? rrb? . -> . any/c)]
+  [rrb-ref          (exact-nonnegative-integer? rrb? . -> . any/c)]
   [rrb-set          (exact-nonnegative-integer? any/c rrb? . -> . rrb?)]
   [rrb-push         (any/c rrb? . -> . rrb?)]
   [rrb-concat       (rrb? rrb? . -> . rrb?)]

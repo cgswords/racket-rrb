@@ -1,7 +1,7 @@
 #lang racket
 
 (provide 
-  rrb-get          ;; Int -> RRB a -> a
+  rrb-ref          ;; Int -> RRB a -> a
   rrb-set          ;; Int -> a -> RRB a -> RRB a
   rrb-push         ;; a -> RRB a -> RRB a
   rrb-concat       ;; RRB a -> RRB a -> RRB a
@@ -34,12 +34,12 @@
 (define rrb? rrb-node?)
 
  ;; Gets the value at index i recursively.
-(define rrb-get
+(define rrb-ref
   (lambda (i n)
     (if (leaf-rrb-node? n) 
         (vector-ref (rrb-node-data n) i)
         (let ((slot (get-slot i n)))
-          (rrb-get (- i (index-sub slot n)) 
+          (rrb-ref (- i (index-sub slot n)) 
                (vector-ref (rrb-node-data n) slot))))))
 
 ;; Calculates in which slot the item probably is, then

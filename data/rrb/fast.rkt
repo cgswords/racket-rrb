@@ -6,8 +6,8 @@
   rrb-push         ;; a -> RRB a -> RRB a
   rrb-concat       ;; RRB a -> RRB a -> RRB a
   rrb-print-tree   ;; RRB a -> Void 
-  rrb-length       ;; RRB a -> Int 
-  rrb-create-tree  ;; a -> RRB a
+  rrb-count        ;; RRB a -> Int 
+  make-rrb         ;; a -> RRB a
   rrb?)            ;; any -> Bool
 
 ;; An RRB-Tree has two distinct data types. A leaf which contains data as
@@ -131,8 +131,7 @@
  
 
 ;; Returns how many items are in the tree.
-
-(define rrb-length
+(define rrb-count
   (lambda (n)
     (if (leaf-rrb-node? n) 
         (vector-length (rrb-node-data n))
@@ -179,7 +178,7 @@
             (vector-set!-last (rrb-node-data a) c0)
             (let* ((s (rrb-node-sizes a))
                    (slen (vector-length s)))
-              (vector-set!-last s (+ (rrb-length c0)
+              (vector-set!-last s (+ (rrb-count c0)
                                 (if (> slen 1) (vector-ref s (- slen 2)) 0)))
               (cond
                 [(zero? (vector-length (rrb-node-data c1)))
@@ -191,12 +190,12 @@
                   (let* ((bsize (rrb-node-sizes b))
                          (bdata (rrb-node-data b))
                          (blen (vector-length bsize))
-                         (c1len (rrb-length c1)))
+                         (c1len (rrb-count c1)))
                     (begin
                       (vector-set!-first bdata c1)
                       (vector-set!-first (rrb-node-sizes b) c1len)
                       (let loop ((i 1) (len c1len)) 
-                        (if (>= i blen) bsize (let ((len (+ len (rrb-length (vector-ref bdata i)))))
+                        (if (>= i blen) bsize (let ((len (+ len (rrb-count (vector-ref bdata i)))))
                                                 (begin (vector-set! bsize i len) (loop (add1 i) len)))))
                       (balance-recur a b)))]))))])))
 
@@ -242,7 +241,7 @@
     (let ((asizes (rrb-node-sizes a))
           (bsizes (rrb-node-sizes b)))
       (let ((l (if (or (zero? index) (= index (vector-length asizes))) 0 (get2 asizes asizes (sub1 index)))))
-        (set2 asizes bsizes index (+ l (rrb-length slot)))))))
+        (set2 asizes bsizes index (+ l (rrb-count slot)))))))
 
 (define rebalance
   (lambda (a b toRemove)
@@ -252,7 +251,7 @@
                (new-slots (make-vector dlen 0)))
           (let loop ((i 0))
             (cond 
-              [(< i dlen) (vector-set! new-slots i (+ (rrb-length (vector-ref data i)) 
+              [(< i dlen) (vector-set! new-slots i (+ (rrb-count (vector-ref data i)) 
                                                    (if (zero? i) 0 (vector-ref new-slots (sub1 i)))))
                (loop (add1 i))]
               [else new-slots])))))
@@ -348,7 +347,7 @@
       (vector-set! vec (sub1 size) item))))
 
 
-(define rrb-create-tree (lambda (item) (create item 0)))
+(define make-rrb (lambda (item) (create item 0)))
 
 ;; Recursively creates a tree with a given height containing
 ;; only the given item.
@@ -363,12 +362,12 @@
   (lambda (tree height)
     (if (= (rrb-node-height tree) height) 
         tree
-        (rrb-node height (vector (rrb-length tree)) (vector (parentise tree (sub1 height)))))))
+        (rrb-node height (vector (rrb-count tree)) (vector (parentise tree (sub1 height)))))))
 
 ;; C'mon, get together!
 (define siblise
   (lambda (a b)
-    (rrb-node (add1 (rrb-node-height a)) (vector (rrb-length a) (+ (rrb-length a) (rrb-length b))) (vector a b))))
+    (rrb-node (add1 (rrb-node-height a)) (vector (rrb-count a) (+ (rrb-count a) (rrb-count b))) (vector a b))))
 
      
 ;; http://jsperf.com/native-array-vs-rrb-tree-pushing

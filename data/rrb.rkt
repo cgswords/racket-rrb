@@ -9,8 +9,8 @@
   [rrb-push         (any/c rrb? . -> . rrb?)]
   [rrb-concat       (rrb? rrb? . -> . rrb?)]
   [rrb-print-tree   (rrb? . -> . void?)]
-  [rrb-length       (rrb? . -> . exact-nonnegative-integer?)]
-  [rrb-create-tree  (any/c . -> . rrb?)]
+  [rrb-count        (rrb? . -> . exact-nonnegative-integer?)]
+  [make-rrb         (any/c . -> . rrb?)]
   [rrb?             (any/c . -> . boolean?)])
 
 

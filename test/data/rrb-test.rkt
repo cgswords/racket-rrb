@@ -38,68 +38,68 @@
 (define rrb-test
   (test-suite "Tests for rrb.rkt" 
     (check-equal?
-      (for/list ([i (in-range 0 99)]) (rrb-get i tree1))
+      (for/list ([i (in-range 0 99)]) (rrb-ref i tree1))
       (for/list ([i (in-range 1 100)]) i)
       "Tree Get Test #1")
 
     (check-equal?
-      (for/list ([i (in-range 0 99)]) (rrb-get i tree2))
+      (for/list ([i (in-range 0 99)]) (rrb-ref i tree2))
       (for/list ([i (in-range 100 199)]) i)
       "Tree Get Test #2")
 
     (check-equal?
-      (for/list ([i (in-range 0 99)]) (rrb-get i tree3))
+      (for/list ([i (in-range 0 99)]) (rrb-ref i tree3))
       (for/list ([i (in-range 200 299)]) i)
       "Tree Get Test #3")
 
     (check-equal?
-      (for/list ([i (in-range 0 99)]) (rrb-get i tree4))
+      (for/list ([i (in-range 0 99)]) (rrb-ref i tree4))
       (for/list ([i (in-range 300 399)]) i)
       "Tree Get Test #4")
 
     (check-equal?
-      (for/list ([i (in-range 1000 1999)]) (rrb-get i tree5))
+      (for/list ([i (in-range 1000 1999)]) (rrb-ref i tree5))
       (for/list ([i (in-range 1001 2000)]) i)
       "Tree Get Test #5")
 
     (check-equal?
-      (for/list ([i (in-range 1000 1999)]) (rrb-get i tree6))
+      (for/list ([i (in-range 1000 1999)]) (rrb-ref i tree6))
       (for/list ([i (in-range 11000 11999)]) i)
       "Tree Get Test #6")
 
     (check-equal?
-      (for/list ([i (in-range 0 199)]) (rrb-get i tree12))
+      (for/list ([i (in-range 0 199)]) (rrb-ref i tree12))
       (for/list ([i (in-range 1 200)]) i)
       "Tree Concat Test #1")
 
     (check-equal?
-      (for/list ([i (in-range 0 199)]) (rrb-get i tree23))
+      (for/list ([i (in-range 0 199)]) (rrb-ref i tree23))
       (for/list ([i (in-range 100 299)]) i)
       "Tree Concat Test #2")
 
     (check-equal?
-      (for/list ([i (in-range 0 199)]) (rrb-get i tree34))
+      (for/list ([i (in-range 0 199)]) (rrb-ref i tree34))
       (for/list ([i (in-range 200 399)]) i)
       "Tree Concat Test #3")
 
     (check-equal?
-      (for/list ([i (in-range 0 399)]) (rrb-get i tree1234a))
+      (for/list ([i (in-range 0 399)]) (rrb-ref i tree1234a))
       (for/list ([i (in-range 1 400)]) i)
       "Tree Concat Test #4")
 
     (check-equal?
-      (for/list ([i (in-range 0 399)]) (rrb-get i tree1234b))
+      (for/list ([i (in-range 0 399)]) (rrb-ref i tree1234b))
       (for/list ([i (in-range 1 400)]) i)
       "Tree Concat Test #5")
 
     (check-equal?
-      (for/list ([i (in-range 0 19999)]) (rrb-get i tree56))
-      (append (for/list ([i (in-range 0 9999)]) (rrb-get i tree5)) (for/list ([i (in-range 0 10000)]) (rrb-get i tree6)))
+      (for/list ([i (in-range 0 19999)]) (rrb-ref i tree56))
+      (append (for/list ([i (in-range 0 9999)]) (rrb-ref i tree5)) (for/list ([i (in-range 0 10000)]) (rrb-ref i tree6)))
       "Tree Concat Test #6")
 
     (check-equal?
       (let ((tree (rrb-set-pairs (for/list ([i (in-range 0 399)]) (cons i 0)) tree1234a)))
-        (for/list ([i (in-range 0 399)]) (rrb-get i tree)))
+        (for/list ([i (in-range 0 399)]) (rrb-ref i tree)))
       (for/list ([i (in-range 0 399)]) 0)
       "Tree Set Test")))
 

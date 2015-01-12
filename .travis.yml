@@ -10,9 +10,9 @@ before_install:
 - cat travis-racket/install-racket.sh | bash # pipe to bash not sh!
 
 install:
- - /usr/racket/bin/raco pkg install --deps search-auto -n racket-rrb .
+ - /usr/racket/bin/raco pkg install --deps search-auto
  - /usr/racket/bin/raco pkg install --deps search-auto cover
  
 script:
  - /usr/racket/bin/raco test -x -p racket-rrb
- - /usr/racket/bin/raco cover -c coveralls .
+ - /usr/racket/bin/raco cover -f coveralls -d $TRAVIS_BUILD_DIR/coverage .
